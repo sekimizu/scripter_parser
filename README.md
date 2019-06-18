@@ -51,7 +51,7 @@ Returns {1, 0, -1} if {pass, failed, error case}
 
 ## How to use
 
-1. ScripterParser.exe <config_file>
+### 1. ScripterParser.exe <config_file>
 
 It will generate a key file in the same folder in hex format. (using openssl/md5)
 And display the MD5sum in stdout.
@@ -63,7 +63,7 @@ And display the MD5sum in stdout.
 .....................................................................................................
  MD5 = 3f2c67643f30f7b9ffb045c9388f65c2`
 
-2. ScripterParser.exe <key_file> <config_file>
+### 2. ScripterParser.exe <key_file> <config_file>
 
 
 C:\Users\kenny.pan\Desktop\scripter_checker>C:\Users\kenny.pan\Desktop\scripter_checker\ScripterParser.exe C:\Users\kenny.pan\Desktop\key C:\Users\kenny.pan\Desktop\SM-All_Test_sys_sh.txt
