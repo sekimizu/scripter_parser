@@ -1,0 +1,264 @@
+﻿#include "pch.h"
+#include <iostream>
+#include <iomanip>
+#include <sstream>
+#include <fstream>
+#include <string>
+#include <unordered_map>
+#include <openssl/md5.h>
+#include "ScripterParser.h"
+#include <boost/iostreams/device/mapped_file.hpp>
+#include <boost/algorithm/hex.hpp>
+
+#define DEBUG_VER
+//#define GOLDEN_CONFIG_FILE "C:\\Users\\kenny.pan\\Desktop\\keyXDDD"
+#define DEFAULT_KEY_FILENAME "C:\\Users\\kenny.pan\\Desktop\\key"
+#define GOLDEN_CONFIG_FILE DEFAULT_KEY_FILENAME
+#define CONFIG_FILE "C:\\Users\\kenny.pan\\Desktop\\PlanA.txt"
+
+#ifdef DEBUG_VER
+#pragma comment(lib, "libcryptoMTd.lib")
+#pragma comment(lib, "libsslMTd.lib")
+#else
+#pragma comment(lib, "libcryptoMT.lib")
+#pragma comment(lib, "libsslMT.lib")
+#endif
+
+using namespace std;
+
+const std::string md5_from_file(const std::string& path)
+{
+	unsigned char result[MD5_DIGEST_LENGTH];
+	boost::iostreams::mapped_file_source src(path);
+	MD5((unsigned char*)src.data(), src.size(), result);
+
+	std::ostringstream sout;
+	sout << std::hex << std::setfill('0');
+	for (auto c : result) sout << std::setw(2) << (int)c;
+
+	return sout.str();
+}
+
+class Config {
+private:
+	/*
+	 * Accept three type of patterns
+	 *		AAAAAA=BBBBBB -> name : AAAAAA, value : BBBBBB
+	 *		CCCCCC(DDDDDD) -> name : CCCCCC, value : DDDDDD
+	 *		EEEEEE.sh FFFFFF -> name : EEEEEE, value : FFFFFF
+	 *
+	 *		BBBBBB, DDDDDD, FFFFFF could be NULL
+	 */
+	unordered_map<string, vector<pair<int, string>>> config;
+	bool is_key;
+	string key_md5sum;
+	vector<vector<string>> pattern = { {"=", "-"}, {"(", ")"}, {".sh", "-"} };
+	ifstream mFile;
+	const std::string WHITESPACE = " ";
+
+	std::string ltrim(const std::string& s)	{
+		size_t start = s.find_first_not_of(WHITESPACE);
+		return (start == std::string::npos) ? "" : s.substr(start);
+	}
+	std::string rtrim(const std::string& s)	{
+		size_t end = s.find_last_not_of(WHITESPACE);
+		return (end == std::string::npos) ? "" : s.substr(0, end + 1);
+	}
+	std::string trim(const std::string& s) {
+		return rtrim(ltrim(s));
+	}
+public:
+	Config(string filepath, bool key) {
+		key_md5sum = "";
+		is_key = key;
+		if (filepath.size() == 0) throw "Config filepath could not be empty !";
+		mFile.open(filepath);
+		if (!mFile.is_open()) throw "Can not open config file !";
+	}
+	~Config() {
+		if (mFile.is_open()) {
+			mFile.close();
+		}
+	}
+	string get_md5_sum() {
+		return this->key_md5sum;
+	}
+	void load_file() {
+		string text;
+		int line = 0;
+
+		while (getline(mFile, text)) {
+			line++;
+			bool is_found = false;
+			if (is_key) {
+				text = boost::algorithm::unhex(text);
+			}
+			/* skip the line start with '#' and space line */
+			if (text.size() == 0) continue;
+			/* record key's md5sum */
+			if (!is_key && text.size() >= 3 && text[0] == '#' && text[1] == '#') {
+				this->key_md5sum = text.substr(3, text.size());
+				cout << " Get key's md5sum = [" << this->key_md5sum << "]" << endl;
+			}
+			if (text[0] == '#') continue;
+			text = trim(text);
+
+			for (int i = 0; !is_found && i < static_cast<int>(pattern.size()); i++) {
+				int index = text.find(pattern[i][0]);
+				if (index != -1) {
+					string name = text.substr(0, index);
+					string value = text.substr(index + pattern[i][0].size(), text.size() - (pattern[i][1] == "-" ? 0 : index + pattern[i][0].size() + 1));
+					config[name].push_back(make_pair(line, value));
+					is_found = true;
+				}
+			}
+			/*
+			if (!is_found) {
+				cout << "TEXT=" << text << endl;
+				throw "Unexcepet pattern found in config file";
+			}
+			*/
+		}
+	}
+	unordered_map<string, vector<pair<int, string>>> getConfig() {
+		return config;
+	}
+	void display() {
+		for (auto x : config) {
+			cout << " CMD : " << x.first << endl;
+
+			for (auto y : x.second) {
+				cout << " \t Line : " << y.first << " , Value : " << y.second << endl;
+			}
+		}
+	}
+};
+
+class Parser{
+	unordered_map<string, vector<pair<int, string>>> golden, current;
+public:
+	Parser(unordered_map<string, vector<pair<int, string>>> a, unordered_map<string, vector<pair<int, string>>> b) {
+		golden = a;
+		current = b;
+	}
+	void dump_message(string cmd, int index) {
+		if (index == -1) {
+			/* dump all */
+			cout << ">>> Key config >>> " << golden[cmd].size() << " times !!!" << endl;
+			for (auto x : golden[cmd]) {
+				cout << " \t Line : " << x.first << " , Value : " << x.second << endl;
+			}
+			cout << ">>> Current config >>> " << current[cmd].size() << " times !!!" << endl;
+			for (auto x : current[cmd]) {
+				cout << " \t Line : " << x.first << " , Value : " << x.second << endl;
+			}
+		} else {
+			/* dump target */
+			cout << ">>> Key config >>>" << endl;
+			cout << " \t Line : " << golden[cmd][index].first << " , Value : " << golden[cmd][index].second << endl;
+			cout << ">>> Current config >>>" << endl;
+			cout << " \t Line : " << current[cmd][index].first << " , Value : " << current[cmd][index].second << endl;
+		}
+	}
+	bool compare() {
+		if (golden.size() < current.size()) {
+			cout << "strange command found in current config " << endl;
+			for (auto x : current) {
+				string ignore_cmd = "*" + x.first;
+				if (golden.count(x.first) == 0 && golden.count(ignore_cmd) == 0) {
+					cout << " CMD : " << x.first << endl;
+					for (auto y : x.second) {
+						cout << " \t Line : " << y.first << " , Value : " << y.second << endl;
+					}
+				}
+			}
+			return false;
+		}
+
+		for (auto x : golden) {
+			string cmd = x.first;
+			if (cmd.size() == 0 || cmd.at(0) == '*') continue;
+
+			cout << " Check CMD : " << cmd << endl;
+			if (x.second.size() != current[cmd].size()) {
+				cout << " mismatch found !!!" << endl;
+				dump_message(x.first, -1);
+				return false;
+			}
+			for (int i = 0; i < static_cast<int>(x.second.size()); i++) {
+				if (golden[cmd][i].second != current[cmd][i].second) {
+					cout << " mismatch found !!!" << endl;
+					dump_message(cmd, i);
+					return false;
+				}
+			}
+		}
+		cout << " All match !!!" << endl;
+		return true;
+	};
+};
+
+int main(int argc, char **argv)
+{
+	int ret = -1;
+	if (argc == 1 || argc == 3) {
+		try {
+			Config golden(argc == 1 ? GOLDEN_CONFIG_FILE : argv[1], true), current(argc == 1 ? CONFIG_FILE : argv[2], false);
+			cout << " >>>>>>> Read key" << endl;
+			golden.load_file();
+			cout << " >>>>>>> Read config" << endl;
+			current.load_file();
+			cout << " >>>>>>> Check md5sum" << endl;
+			if (current.get_md5_sum().size() != 32) {
+				cout << " No valid md5sum found in config file !!!" << endl;
+				return 0;
+			}
+			else if (current.get_md5_sum() != md5_from_file(argc == 1 ? GOLDEN_CONFIG_FILE : argv[1])) {
+				cout << " md5sum no match !!!" << endl;
+				return 0;
+			}
+#ifdef DEBUG
+			cout << " >>>>>>> Dump golden" << endl;
+			golden.display();
+			cout << " >>>>>>> Dump current" << endl;
+			current.display();
+#endif
+			cout << " >>>>>>> Start compare" << endl;
+			Parser parser(golden.getConfig(), current.getConfig());
+			ret = parser.compare();
+		}
+		catch (const char* msg) {
+			cout << msg << endl;
+		}
+	}
+	else if (argc == 2) {
+		ifstream fromFile;
+		fstream toFile;
+
+		fromFile.open(argv[1]);
+		toFile.open(DEFAULT_KEY_FILENAME, ios::out);
+
+		if (!fromFile.is_open() || !toFile.is_open()) {
+			cout << "Can't not open file !!!" << endl;
+			return ret;
+		}
+
+		cout << " Start transfer text to hex data key..." << endl;
+		string text;
+		while (getline(fromFile, text)) {
+			cout << ".";
+			toFile << boost::algorithm::hex(text) << endl;
+		}
+		fromFile.close();
+		toFile.close();
+		cout << " DONE !!! " << endl;
+		cout << " MD5 = " << md5_from_file(DEFAULT_KEY_FILENAME) << endl;
+	}
+	else {
+		cout << " Usage : " << endl;
+		cout << " \tTo generate hex file (default name : key) and return md5sum : Scripter.exe <Original config file>" << endl;
+		cout << " \tTo do the comparsion with two files : Scripter.exe <key> <config file> " << endl;
+	}
+	
+	return ret;
+}
