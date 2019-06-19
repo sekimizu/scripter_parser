@@ -6,6 +6,19 @@ Check md5sum and content of configuration between two files
 Compare the given two files, one is made in hex-format, and the other one is modified config file.
 
 
+## Environment
+
+win7 + visual studio 2017
+
+* [Openssl 1.1.0f](https://www.openssl.org/source/) - For calculate md5sum.
+
+* [Boost 1.70.0](https://dl.bintray.com/boostorg/release/1.70.0/source/) - Use boost feature.
+
+* [Manual build Boost for VS2017](https://blog.csdn.net/leowinbow/article/details/86247474)
+
+* [Pre-built Boost for VS2017](https://sourceforge.net/projects/boost/files/boost-binaries/1.70.0/) - Use "boost_1_70_0-msvc-14.1-64.exe"
+
+
 ## Key file part
 
 The key file should be exactlly the same with config file at first.
